@@ -1,0 +1,59 @@
+name: Build MIX PC online update
+
+on:
+  push:
+    paths:
+      - 'payload/v1.4.12/READY'
+
+permissions:
+  contents: write
+
+jobs:
+  build-update:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      - name: Rebuild update package from chunks
+        shell: bash
+        run: |
+          set -euo pipefail
+          cat payload/v1.4.12/chunk_*.b64 | tr -d '\n\r ' | base64 -d > MIXPC-1.4.12.zip
+          actual_sha="$(sha256sum MIXPC-1.4.12.zip | awk '{print $1}')"
+          expected_sha="5f206911027b88de83c5c95dfc30bfa7f4a7e5fb3c36c27a76b87cf03f185875"
+          if [ "$actual_sha" != "$expected_sha" ]; then
+            echo "SHA mismatch: $actual_sha"
+            exit 1
+          fi
+          cp MIXPC-1.4.12.zip latest.zip
+          size="$(stat -c%s MIXPC-1.4.12.zip)"
+          cat > version.json <<EOF
+          {
+            "version": "1.4.12",
+            "channel": "stable",
+            "package_url": "https://update.boulland.ru/MIXPC-1.4.12.zip",
+            "url": "https://update.boulland.ru/MIXPC-1.4.12.zip",
+            "download_url": "https://update.boulland.ru/MIXPC-1.4.12.zip",
+            "sha256": "$actual_sha",
+            "size": $size,
+            "required": false,
+            "notes": "Для ОЗУ и SSD служебная пометка «Б.У.» в конце артикула больше не участвует в сопоставлении с кодом производителя. Сам артикул в МойСклад не изменяется."
+          }
+          EOF
+
+      - name: Commit release files
+        shell: bash
+        run: |
+          set -euo pipefail
+          git config user.name "mixpc-updater-bot"
+          git config user.email "actions@users.noreply.github.com"
+          git add MIXPC-1.4.12.zip latest.zip version.json
+          if git diff --cached --quiet; then
+            echo "Nothing to commit"
+            exit 0
+          fi
+          git commit -m "Release MIX PC Photo Cleaner v1.4.12"
+          git push
